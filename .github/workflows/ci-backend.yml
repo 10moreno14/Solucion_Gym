@@ -1,30 +1,30 @@
-name: CI Backend Solución Gym
+name: CI/CD Solución Gym
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
 
 jobs:
-  build-and-test:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
     - name: Descargar código
       uses: actions/checkout@v4
 
-    - name: Configurar Node.js
-      uses: actions/setup-node@v4
+    # 1. Login en Azure (Usando los secretos que creaste)
+    - name: Iniciar sesión en Azure Container Registry
+      uses: azure/docker-login@v2
       with:
-        node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: './backend/package-lock.json'
+        login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
 
-    - name: Instalar dependencias
-      run: npm install
-      working-directory: ./backend
+    # 2. Construir la imagen de Docker
+    # Esto ejecuta internamente el build de NestJS dentro del contenedor
+    - name: Construir Imagen
+      run: docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/gym-backend:latest ./backend
 
-    - name: Verificar Compilación (Build)
-      run: npx nest build
-      working-directory: ./backend
+    # 3. Empujar la imagen al ACR
+    - name: Subir Imagen al Almacén (Push)
+      run: docker push ${{ secrets.ACR_LOGIN_SERVER }}/gym-backend:latest
