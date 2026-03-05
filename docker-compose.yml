@@ -1,34 +1,27 @@
-version: '3.8'
+name: CI/CD Solución Gym
 
-services:
-  # --- BASE DE DATOS
-  db-gym:
-    image: postgres:16-alpine
-    container_name: gym-db
-    restart: always
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: Soluciong1m
-      POSTGRES_DB: solucion_gym_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata_gym:/var/lib/postgresql/data 
+on:
+  push:
+    branches: [ main, master ]
 
-  # --- BACKEND
-  api-gym:
-    build: 
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: gym-backend
-    restart: always
-    ports:
-      - "3000:3000"
-    depends_on:
-      - db-gym 
-    environment:
-      DATABASE_URL: postgresql://admin:Soluciong1m@db-gym:5432/solucion_gym_db
-      PORT: 3000
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
 
-volumes:
-  pgdata_gym: # Definimos el volumen aquí
+    steps:
+    - name: Descargar código
+      uses: actions/checkout@v4
+
+    # Este paso es el "login" con las credenciales que obtuviste de Azure
+    - name: Iniciar sesión en Azure Container Registry
+      uses: azure/docker-login@v2
+      with:
+        login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    # Aquí Docker hará el build y el push automáticamente
+    - name: Construir y Subir Imagen
+      run: |
+        docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/gym-backend:latest ./backend
+        docker push ${{ secrets.ACR_LOGIN_SERVER }}/gym-backend:latest
