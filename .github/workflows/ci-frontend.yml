@@ -27,8 +27,6 @@ jobs:
         docker build \
           --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
           --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }} \
-          --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL=${{ secrets.NEXT_PUBLIC_CLERK_SIGN_IN_URL }} \
-          --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL=${{ secrets.NEXT_PUBLIC_CLERK_SIGN_UP_URL }} \
           -t ${{ secrets.ACR_LOGIN_SERVER }}/gym-frontend:latest .
         
         docker push ${{ secrets.ACR_LOGIN_SERVER }}/gym-frontend:latest
