@@ -2,4 +2,4 @@
 
 // 🔴 Cambia 'localhost' por la IP de tu PC para que funcione en el celular
 // Ejemplo: export const API_URL = "http://192.168.1.15:3000";
-export const API_URL = "http://solucion-gym-api-santi.eastus2.azurecontainer.io:3000";
+export const API_URL = `${process.env.NEXT_PUBLIC_API_URL}`;
