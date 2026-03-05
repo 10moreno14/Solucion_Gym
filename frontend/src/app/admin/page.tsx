@@ -42,7 +42,7 @@ export default function SuperAdminPage() {
   useEffect(() => {
     const cargarGyms = async () => {
       try {
-        const respuesta = await fetch("http://localhost:3000/admin/gyms");
+        const respuesta = await fetch("http://solucion-gym-api-santi.eastus2.azurecontainer.io:3000/admin/gyms");
         const datos = await respuesta.json();
         if (Array.isArray(datos)) setGyms(datos);
       } catch (error) {
@@ -68,7 +68,7 @@ export default function SuperAdminPage() {
     setGyms((prev) => prev.map((gym) => gym.id === gymId ? { ...gym, modulos: { ...gym.modulos, [modulo]: nuevoEstado } } : gym));
 
     try {
-      const respuesta = await fetch(`http://localhost:3000/admin/gyms/${gymId}/modules`, {
+      const respuesta = await fetch(`http://solucion-gym-api-santi.eastus2.azurecontainer.io:3000/admin/gyms/${gymId}/modules`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ modulo, activo: nuevoEstado }),
@@ -87,7 +87,7 @@ export default function SuperAdminPage() {
     setGyms((prev) => prev.map((gym) => gym.id === gymId ? { ...gym, isActive: nuevoEstado } : gym));
 
     try {
-      const respuesta = await fetch(`http://localhost:3000/admin/gyms/${gymId}/status`, {
+      const respuesta = await fetch(`http://solucion-gym-api-santi.eastus2.azurecontainer.io:3000/admin/gyms/${gymId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: nuevoEstado }),
