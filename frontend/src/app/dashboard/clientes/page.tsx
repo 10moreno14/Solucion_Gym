@@ -14,6 +14,7 @@ import {
   Building2 
 } from "lucide-react";
 import ClienteDrawer from "@/components/ClienteDrawer";
+import { API_URL } from "@/config";
 
 // Definimos la interfaz para evitar errores de tipo 'never'
 interface Cliente {
@@ -39,7 +40,7 @@ export default function ClientesPage() {
   const fetchClientes = async () => {
     try {
       const token = await getToken();
-      const res = await fetch(`http://localhost:3000/get-clients?clerkId=${userId}`, {
+      const res = await fetch(`${API_URL}/get-clients?clerkId=${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -57,7 +58,7 @@ export default function ClientesPage() {
     
     try {
       const token = await getToken();
-      const res = await fetch("http://localhost:3000/delete-client", {
+      const res = await fetch(`${API_URL}/delete-client`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json", 
@@ -115,7 +116,7 @@ export default function ClientesPage() {
         <input 
           type="text"
           placeholder="Buscar por nombre o NIT..."
-          className="w-full p-4 pl-12 bg-white border border-slate-200 rounded-2xl shadow-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-base transition-all"
+          className="w-full p-4 pl-12 bg-white border border-slate-200 rounded-2xl shadow-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-emerald-500 text-base transition-all font-bold text-slate-800"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
         />

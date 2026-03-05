@@ -4,11 +4,12 @@ import { useAuth } from "@clerk/nextjs";
 import { 
   Plus, FileText, Trash2, Download, Calendar, 
   MapPin, Wrench, Pencil, Search, X, Filter, 
-  Loader2 // ✅ Importación agregada
+  Loader2, ListOrdered // ✅ Icono agregado para el selector
 } from "lucide-react";
 import ReporteDrawer from "@/components/ReporteDrawer";
 import { pdf } from '@react-pdf/renderer';
 import ReportePDF from "@/components/ReportePDF";
+import { API_URL } from "@/config";
 
 export default function MantenimientoPage() {
   const { isLoaded, userId, getToken } = useAuth();
@@ -24,13 +25,16 @@ export default function MantenimientoPage() {
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
 
-  // 📥 CARGAR REPORTES (Con soporte para filtros)
+  // 💥 NUEVO: Estado para limitar la cantidad de reportes mostrados
+  const [limite, setLimite] = useState(10); 
+
+  // 📥 CARGAR REPORTES
   const fetchReportes = async () => {
     if (!isLoaded || !userId) return;
     setLoading(true);
     try {
         const token = await getToken();
-        let url = `http://localhost:3000/get-reports?clerkId=${userId}`;
+        let url = `${API_URL}/get-reports?clerkId=${userId}`; 
         
         if (filtroCliente) url += `&clientId=${filtroCliente.id}`;
         if (fechaInicio) url += `&start=${fechaInicio}`;
@@ -41,7 +45,27 @@ export default function MantenimientoPage() {
             cache: "no-store"
         });
         const data = await res.json();
-        if (Array.isArray(data)) setReportes(data);
+        
+        if (Array.isArray(data)) {
+            setReportes(data);
+
+            const params = new URLSearchParams(window.location.search);
+            const idEnUrl = params.get('reporteId');
+            const esNuevo = params.get('nuevo');
+
+            if (idEnUrl) {
+                const reporteEncontrado = data.find((r: any) => r.id === idEnUrl);
+                if (reporteEncontrado) {
+                    setReporteParaEditar(reporteEncontrado);
+                    setIsDrawerOpen(true);
+                    window.history.replaceState(null, '', '/dashboard/mantenimiento');
+                }
+            } else if (esNuevo === 'true') {
+                setReporteParaEditar(null);
+                setIsDrawerOpen(true);
+                window.history.replaceState(null, '', '/dashboard/mantenimiento');
+            }
+        }
     } catch (error) {
         console.error("Error al obtener reportes:", error);
     } finally {
@@ -53,20 +77,18 @@ export default function MantenimientoPage() {
     fetchReportes();
   }, [isLoaded, userId, filtroCliente, fechaInicio, fechaFin]);
 
-  // Buscar clientes para el filtro
+  // --- HANDLERS ---
   const buscarClientesFiltro = async (texto: string) => {
     setBusquedaCliente(texto);
     if (texto.length < 2) { setSugerencias([]); return; }
     try {
         const token = await getToken();
-        const res = await fetch(`http://localhost:3000/search-clients?q=${texto}`, { 
+        const res = await fetch(`${API_URL}/search-clients?q=${texto}`, { 
             headers: { Authorization: `Bearer ${token}` } 
         });
         const data = await res.json();
         setSugerencias(data);
-    } catch (e) {
-        console.error("Error buscando clientes:", e);
-    }
+    } catch (e) { console.error("Error buscando clientes:", e); }
   };
 
   const limpiarFiltros = () => {
@@ -75,8 +97,6 @@ export default function MantenimientoPage() {
     setFechaInicio("");
     setFechaFin("");
   };
-
-  // --- HANDLERS ---
 
   const handleCreate = () => {
     setReporteParaEditar(null);
@@ -92,14 +112,12 @@ export default function MantenimientoPage() {
     if(!confirm("¿Estás seguro de eliminar este reporte?")) return;
     setReportes(prev => prev.filter(r => r.id !== id));
     try {
-        await fetch('http://localhost:3000/delete-report', {
+        await fetch(`${API_URL}/delete-report`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id })
         });
-    } catch (error) { 
-        alert("Error al eliminar"); 
-    }
+    } catch (error) { alert("Error al eliminar"); }
   };
 
   const handleDownload = async (reporte: any) => {
@@ -118,7 +136,6 @@ export default function MantenimientoPage() {
         fotosDespues: reporte.photosAfter || [],
         fecha: new Date(reporte.date).toLocaleDateString()
     };
-
     try {
         const blob = await pdf(<ReportePDF data={datosPDF} />).toBlob();
         const url = URL.createObjectURL(blob);
@@ -132,6 +149,9 @@ export default function MantenimientoPage() {
         alert("Error al generar el PDF.");
     }
   };
+
+  // 💥 Lógica para los reportes visibles según el límite
+  const reportesVisibles = reportes.slice(0, limite);
 
   return (
     <div className="max-w-7xl mx-auto pb-20 px-4">
@@ -148,12 +168,29 @@ export default function MantenimientoPage() {
 
       {/* 🔍 BARRA DE FILTROS */}
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
-        <div className="flex items-center gap-2 mb-4 text-gray-700 font-bold text-sm uppercase tracking-wider">
-            <Filter size={16} /> Filtrar historial
+        <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-gray-700 font-bold text-sm uppercase tracking-wider">
+                <Filter size={16} /> Filtrar historial
+            </div>
+            
+            {/* 💥 SELECTOR DE LÍMITE */}
+            <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                <ListOrdered size={16} className="text-gray-400" />
+                <span className="text-xs font-bold text-gray-500 uppercase">Mostrar:</span>
+                <select 
+                    value={limite}
+                    onChange={(e) => setLimite(Number(e.target.value))}
+                    className="bg-transparent text-sm font-bold text-blue-600 outline-none cursor-pointer"
+                >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={reportes.length}>Todos</option>
+                </select>
+            </div>
         </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          
-          {/* Filtro Cliente */}
           <div className="relative md:col-span-2">
             <label className="block text-xs font-bold text-gray-400 mb-1 tracking-tight">NOMBRE DEL CLIENTE / GIMNASIO</label>
             <div className="relative">
@@ -162,7 +199,7 @@ export default function MantenimientoPage() {
                     value={busquedaCliente}
                     onChange={(e) => buscarClientesFiltro(e.target.value)}
                     placeholder="Escribe para buscar..."
-                    className="w-full p-2.5 pl-10 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full p-2.5 pl-10 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800"
                 />
                 <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
                 {filtroCliente && (
@@ -181,19 +218,14 @@ export default function MantenimientoPage() {
                 </ul>
             )}
           </div>
-
-          {/* Filtro Fecha Inicio */}
           <div>
             <label className="block text-xs font-bold text-gray-400 mb-1 tracking-tight">DESDE (FECHA)</label>
-            <input type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+            <input type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800" />
           </div>
-
-          {/* Filtro Fecha Fin */}
           <div>
             <label className="block text-xs font-bold text-gray-400 mb-1 tracking-tight">HASTA (FECHA)</label>
-            <input type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+            <input type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800" />
           </div>
-
         </div>
         
         {(filtroCliente || fechaInicio || fechaFin) && (
@@ -216,17 +248,26 @@ export default function MantenimientoPage() {
               <p className="text-gray-500 text-sm">Prueba ajustando los filtros de búsqueda.</p>
           </div>
       ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {reportes.map((repo) => (
-                  <ReporteCard 
-                    key={repo.id} 
-                    repo={repo} 
-                    onEdit={handleEdit} 
-                    onDelete={handleDelete} 
-                    onDownload={handleDownload} 
-                  />
-              ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {reportesVisibles.map((repo) => (
+                    <ReporteCard 
+                        key={repo.id} 
+                        repo={repo} 
+                        onEdit={handleEdit} 
+                        onDelete={handleDelete} 
+                        onDownload={handleDownload} 
+                    />
+                ))}
+            </div>
+            
+            {/* 💥 PIE DE PÁGINA INFORMATIVO */}
+            <div className="mt-8 text-center border-t border-gray-100 pt-6">
+                <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">
+                    Viendo {reportesVisibles.length} de {reportes.length} reportes encontrados
+                </p>
+            </div>
+          </>
       )}
 
       <ReporteDrawer 
@@ -238,6 +279,7 @@ export default function MantenimientoPage() {
   );
 }
 
+// Subcomponente ReporteCard (Se mantiene igual)
 function ReporteCard({ repo, onEdit, onDelete, onDownload }: any) {
     const clientName = repo.client?.name || "Cliente Eliminado";
     const machineName = repo.machine?.name || "Equipo Eliminado";

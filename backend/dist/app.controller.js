@@ -20,28 +20,103 @@ const path_1 = require("path");
 const db_1 = require("./db");
 const schema_1 = require("./db/schema");
 const drizzle_orm_1 = require("drizzle-orm");
+const config_1 = require("./config");
 let AppController = class AppController {
+    async ensureTenant(clerkId, fullName, orgId, orgName) {
+        try {
+            if (!clerkId)
+                return null;
+            const mainIdentifier = orgId || clerkId;
+            let gymName = 'Mi Gimnasio';
+            if (orgName && orgName !== 'undefined' && orgName !== '') {
+                gymName = orgName;
+            }
+            else if (fullName && fullName !== 'undefined' && fullName !== '') {
+                gymName = `Gimnasio de ${fullName}`;
+            }
+            await db_1.db.insert(schema_1.tenants)
+                .values({
+                id: mainIdentifier,
+                name: gymName,
+                clerkOrgId: orgId || null,
+            })
+                .onConflictDoUpdate({
+                target: schema_1.tenants.id,
+                set: {
+                    name: gymName,
+                    clerkOrgId: orgId || null
+                }
+            });
+            await db_1.db.insert(schema_1.gymConfigs)
+                .values({
+                tenantId: mainIdentifier,
+                plan: 'Básico',
+                modulos: {
+                    dashboard: true,
+                    planes: true,
+                    afiliados: true,
+                    accesos: true,
+                    caja: true
+                }
+            })
+                .onConflictDoNothing();
+            return mainIdentifier;
+        }
+        catch (error) {
+            console.error("Error al asegurar Tenant:", error);
+            return null;
+        }
+    }
     getWelcome() {
-        return { status: 'success', message: 'API Solución Gym v1.0 🚀' };
+        return { status: 'success', message: 'API Solución Gym v1.1 (Direct Clerk ID) 🚀' };
     }
     async syncUser(body) {
         try {
             const { clerkId, email, fullName } = body;
-            const existingUsers = await db_1.db.select().from(schema_1.users).where((0, drizzle_orm_1.eq)(schema_1.users.clerkId, clerkId));
-            if (existingUsers.length > 0) {
-                return { status: 'success', message: '¡Bienvenido de vuelta!', tenantId: existingUsers[0].tenantId };
+            if (!clerkId)
+                return { status: 'error', message: 'Falta clerkId' };
+            await db_1.db.insert(schema_1.tenants)
+                .values({
+                id: clerkId,
+                name: `Gimnasio de ${fullName}`
+            })
+                .onConflictDoNothing();
+            const userResult = await db_1.db.select().from(schema_1.users).where((0, drizzle_orm_1.eq)(schema_1.users.clerkId, clerkId)).limit(1);
+            const user = userResult[0];
+            if (user) {
+                return {
+                    status: 'success',
+                    message: '¡Bienvenido de vuelta!',
+                    tenantId: clerkId
+                };
             }
-            const newTenant = await db_1.db.insert(schema_1.tenants).values({ name: `Gimnasio de ${fullName}` }).returning();
-            const tenantId = newTenant[0].id;
-            await db_1.db.insert(schema_1.users).values({ clerkId, email, fullName, tenantId });
-            return { status: 'success', message: 'Usuario creado', tenantId };
+            await db_1.db.insert(schema_1.users).values({
+                clerkId: clerkId,
+                email: email,
+                fullName: fullName,
+                tenantId: clerkId,
+                role: 'gimnasio'
+            });
+            await db_1.db.insert(schema_1.gymConfigs)
+                .values({
+                tenantId: clerkId,
+                plan: 'Básico',
+                modulos: { dashboard: true, planes: true, afiliados: true, accesos: false, caja: false }
+            })
+                .onConflictDoNothing();
+            return {
+                status: 'success',
+                message: 'Usuario y gimnasio sincronizados',
+                tenantId: clerkId
+            };
         }
         catch (error) {
+            console.error("Error en sync-user:", error);
             return { status: 'error', message: 'Error en sincronización' };
         }
     }
     uploadFiles(files) {
-        return files.map(file => `http://localhost:3000/uploads/${file.filename}`);
+        return files.map(file => `${config_1.API_URL}/uploads/${file.filename}`);
     }
     async getClients(clerkId) {
         try {
@@ -260,17 +335,17 @@ let AppController = class AppController {
     }
     async getStats(clerkId) {
         try {
-            const userResult = await db_1.db.select().from(schema_1.users).where((0, drizzle_orm_1.eq)(schema_1.users.clerkId, clerkId)).limit(1);
-            const user = userResult[0];
-            if (!user || !user.tenantId) {
+            if (!clerkId)
                 return { stats: { reports: 0, clients: 0, machines: 0 }, latestReports: [] };
-            }
-            const tenantId = user.tenantId;
-            const totalReports = await db_1.db.select().from(schema_1.maintenanceReports).where((0, drizzle_orm_1.eq)(schema_1.maintenanceReports.tenantId, tenantId));
-            const totalClients = await db_1.db.select().from(schema_1.clients).where((0, drizzle_orm_1.eq)(schema_1.clients.tenantId, tenantId));
-            const totalMachines = await db_1.db.select().from(schema_1.machines).where((0, drizzle_orm_1.eq)(schema_1.machines.tenantId, tenantId));
+            await this.ensureTenant(clerkId);
+            const totalReports = await db_1.db.select().from(schema_1.maintenanceReports)
+                .where((0, drizzle_orm_1.eq)(schema_1.maintenanceReports.tenantId, clerkId));
+            const totalClients = await db_1.db.select().from(schema_1.clients)
+                .where((0, drizzle_orm_1.eq)(schema_1.clients.tenantId, clerkId));
+            const totalMachines = await db_1.db.select().from(schema_1.machines)
+                .where((0, drizzle_orm_1.eq)(schema_1.machines.tenantId, clerkId));
             const latestReports = await db_1.db.query.maintenanceReports.findMany({
-                where: (0, drizzle_orm_1.eq)(schema_1.maintenanceReports.tenantId, tenantId),
+                where: (0, drizzle_orm_1.eq)(schema_1.maintenanceReports.tenantId, clerkId),
                 limit: 5,
                 orderBy: [(0, drizzle_orm_1.desc)(schema_1.maintenanceReports.date)],
                 with: { client: true }
@@ -285,7 +360,459 @@ let AppController = class AppController {
             };
         }
         catch (error) {
+            console.error("Error en get-stats:", error);
             return { stats: { reports: 0, clients: 0, machines: 0 }, latestReports: [] };
+        }
+    }
+    async getPlans(clerkId) {
+        try {
+            if (!clerkId)
+                return [];
+            return await db_1.db.select()
+                .from(schema_1.plans)
+                .where((0, drizzle_orm_1.eq)(schema_1.plans.tenantId, clerkId))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.plans.createdAt));
+        }
+        catch (e) {
+            console.error("Error get-plans:", e);
+            return [];
+        }
+    }
+    async savePlan(body) {
+        try {
+            const { clerkId, id, name, price, durationDays, description, status } = body;
+            if (!clerkId)
+                return { status: 'error', message: 'Falta el clerkId' };
+            await this.ensureTenant(clerkId);
+            const planData = {
+                name,
+                price: String(price),
+                durationDays: Number(durationDays),
+                description,
+                status: status || 'ACTIVE',
+                tenantId: clerkId
+            };
+            if (id) {
+                await db_1.db.update(schema_1.plans)
+                    .set(planData)
+                    .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.plans.id, id), (0, drizzle_orm_1.eq)(schema_1.plans.tenantId, clerkId)));
+                return { status: 'success', message: 'Plan actualizado' };
+            }
+            else {
+                await db_1.db.insert(schema_1.plans).values(planData);
+                return { status: 'success', message: 'Plan creado' };
+            }
+        }
+        catch (e) {
+            console.error("Error save-plan:", e);
+            return { status: 'error', message: 'Error al guardar el plan' };
+        }
+    }
+    async togglePlan(body) {
+        try {
+            const { id, status, clerkId } = body;
+            if (!id || !status || !clerkId) {
+                return { status: 'error', message: 'Faltan datos' };
+            }
+            await db_1.db.update(schema_1.plans)
+                .set({ status: String(status) })
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.plans.id, id), (0, drizzle_orm_1.eq)(schema_1.plans.tenantId, clerkId)));
+            return { status: 'success' };
+        }
+        catch (error) {
+            console.error("Error toggle-plan:", error);
+            return { status: 'error', message: 'Error al procesar el plan' };
+        }
+    }
+    async deletePlan(body) {
+        try {
+            const { id, clerkId } = body;
+            if (!id || !clerkId)
+                return { status: 'error', message: 'Faltan datos' };
+            await db_1.db.delete(schema_1.plans).where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.plans.id, id), (0, drizzle_orm_1.eq)(schema_1.plans.tenantId, clerkId)));
+            return { status: 'success', message: 'Plan eliminado correctamente' };
+        }
+        catch (error) {
+            console.error("Error delete-plan:", error);
+            return {
+                status: 'error',
+                message: 'No se puede eliminar: Este plan tiene historial de ventas asociado. Te sugerimos "Archivarlo".'
+            };
+        }
+    }
+    async getAffiliates(clerkId) {
+        try {
+            if (!clerkId)
+                return [];
+            const today = new Date();
+            const affiliatesData = await db_1.db.query.affiliates.findMany({
+                where: (0, drizzle_orm_1.eq)(schema_1.affiliates.tenantId, clerkId),
+                orderBy: [(0, drizzle_orm_1.desc)(schema_1.affiliates.createdAt)],
+                with: { memberships: true }
+            });
+            return affiliatesData.map(aff => {
+                const activeMem = aff.memberships.find(m => m.status === 'ACTIVE' && new Date(m.endDate) >= today);
+                return {
+                    id: aff.id,
+                    fullName: aff.fullName,
+                    documentType: aff.documentType,
+                    documentNumber: aff.documentNumber,
+                    phone: aff.phone,
+                    status: aff.status,
+                    photoUrl: aff.photoUrl,
+                    hasActivePlan: !!activeMem,
+                    expirationDate: activeMem ? activeMem.endDate : null
+                };
+            });
+        }
+        catch (e) {
+            console.error("Error get-affiliates:", e);
+            return [];
+        }
+    }
+    async saveAffiliate(body) {
+        try {
+            const { clerkId, id, fullName, documentType, documentNumber, phone, status, photoUrl } = body;
+            if (!clerkId)
+                return { status: 'error', message: 'Falta el clerkId' };
+            await this.ensureTenant(clerkId);
+            const affiliateData = {
+                fullName,
+                documentType: documentType || 'CC',
+                documentNumber,
+                phone,
+                status: status || 'ACTIVE',
+                photoUrl,
+                tenantId: clerkId
+            };
+            if (id) {
+                await db_1.db.update(schema_1.affiliates)
+                    .set(affiliateData)
+                    .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.affiliates.id, id), (0, drizzle_orm_1.eq)(schema_1.affiliates.tenantId, clerkId)));
+                return { status: 'success', message: 'Afiliado actualizado' };
+            }
+            else {
+                await db_1.db.insert(schema_1.affiliates).values(affiliateData);
+                return { status: 'success', message: 'Afiliado registrado' };
+            }
+        }
+        catch (e) {
+            console.error("Error save-affiliate:", e);
+            return { status: 'error', message: 'Error al guardar el afiliado' };
+        }
+    }
+    async toggleAffiliate(body) {
+        try {
+            const { id, status, clerkId } = body;
+            if (!id || !status || !clerkId)
+                return { status: 'error', message: 'Faltan datos' };
+            await db_1.db.update(schema_1.affiliates)
+                .set({ status: String(status) })
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.affiliates.id, id), (0, drizzle_orm_1.eq)(schema_1.affiliates.tenantId, clerkId)));
+            return { status: 'success' };
+        }
+        catch (error) {
+            console.error("Error toggle-affiliate:", error);
+            return { status: 'error', message: 'Error al cambiar estado' };
+        }
+    }
+    async deleteAffiliate(body) {
+        try {
+            const { id, clerkId } = body;
+            if (!id || !clerkId)
+                return { status: 'error', message: 'Faltan datos' };
+            await db_1.db.delete(schema_1.affiliates).where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.affiliates.id, id), (0, drizzle_orm_1.eq)(schema_1.affiliates.tenantId, clerkId)));
+            return { status: 'success', message: 'Afiliado eliminado correctamente' };
+        }
+        catch (error) {
+            console.error("Error delete-affiliate:", error);
+            return {
+                status: 'error',
+                message: 'No se puede eliminar: El afiliado tiene registros asociados. Intenta inactivarlo.'
+            };
+        }
+    }
+    async getAffiliateStatus(clerkId, memberId) {
+        try {
+            if (!clerkId || !memberId)
+                return { hasActivePlan: false, endDate: null };
+            const today = new Date();
+            const latestMembership = await db_1.db.select().from(schema_1.memberships)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.memberships.tenantId, clerkId), (0, drizzle_orm_1.eq)(schema_1.memberships.memberId, memberId), (0, drizzle_orm_1.eq)(schema_1.memberships.status, 'ACTIVE'), (0, drizzle_orm_1.gte)(schema_1.memberships.endDate, today)))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.memberships.endDate))
+                .limit(1);
+            if (latestMembership.length > 0) {
+                return { hasActivePlan: true, endDate: latestMembership[0].endDate };
+            }
+            else {
+                return { hasActivePlan: false, endDate: null };
+            }
+        }
+        catch (error) {
+            console.error("Error get-affiliate-status:", error);
+            return { hasActivePlan: false, endDate: null };
+        }
+    }
+    async saveMembership(body) {
+        try {
+            const { clerkId, memberId, planId, startDate, pricePaid } = body;
+            if (!clerkId || !memberId || !planId)
+                return { status: 'error', message: 'Faltan datos requeridos' };
+            await this.ensureTenant(clerkId);
+            const planResult = await db_1.db.select().from(schema_1.plans)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.plans.id, planId), (0, drizzle_orm_1.eq)(schema_1.plans.tenantId, clerkId))).limit(1);
+            if (planResult.length === 0)
+                return { status: 'error', message: 'Plan no encontrado o no pertenece a este gym' };
+            const affiliateResult = await db_1.db.select().from(schema_1.affiliates)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.affiliates.id, memberId), (0, drizzle_orm_1.eq)(schema_1.affiliates.tenantId, clerkId))).limit(1);
+            const affiliateName = affiliateResult.length > 0 ? affiliateResult[0].fullName : 'Cliente Desconocido';
+            const planDuration = planResult[0].durationDays;
+            const latestMembership = await db_1.db.select().from(schema_1.memberships)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.memberships.tenantId, clerkId), (0, drizzle_orm_1.eq)(schema_1.memberships.memberId, memberId), (0, drizzle_orm_1.eq)(schema_1.memberships.status, 'ACTIVE')))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.memberships.endDate))
+                .limit(1);
+            let start = new Date(startDate || new Date());
+            if (latestMembership.length > 0) {
+                const ultimaFechaFin = new Date(latestMembership[0].endDate);
+                if (ultimaFechaFin > start) {
+                    start = ultimaFechaFin;
+                }
+            }
+            const end = new Date(start);
+            end.setDate(end.getDate() + planDuration);
+            await db_1.db.insert(schema_1.memberships).values({
+                tenantId: clerkId,
+                memberId,
+                planId,
+                startDate: start,
+                endDate: end,
+                pricePaid: String(pricePaid),
+                status: 'ACTIVE'
+            });
+            await db_1.db.insert(schema_1.cashRegister).values({
+                tenantId: clerkId,
+                type: 'INCOME',
+                category: `Membresía ${planResult[0].name} - ${affiliateName}`,
+                amount: String(pricePaid),
+                description: `Venta de membresía registrada desde panel`,
+                date: new Date()
+            });
+            return { status: 'success', message: 'Venta procesada y dinero registrado en caja' };
+        }
+        catch (e) {
+            console.error("Error save-membership:", e);
+            return { status: 'error', message: 'Error al procesar la operación financiera' };
+        }
+    }
+    async verifyAccess(body) {
+        try {
+            const { clerkId, documentNumber } = body;
+            if (!clerkId || !documentNumber)
+                return { status: 'error', message: 'Faltan datos' };
+            await this.ensureTenant(clerkId);
+            const affiliateResult = await db_1.db.select().from(schema_1.affiliates)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.affiliates.tenantId, clerkId), (0, drizzle_orm_1.eq)(schema_1.affiliates.documentNumber, documentNumber))).limit(1);
+            const affiliate = affiliateResult[0];
+            if (!affiliate) {
+                return { status: 'error', message: 'Afiliado no encontrado. Verifica el documento.' };
+            }
+            if (affiliate.status !== 'ACTIVE') {
+                await db_1.db.insert(schema_1.accesses).values({
+                    tenantId: clerkId,
+                    memberId: affiliate.id,
+                    method: 'MANUAL',
+                    status: 'DENIED',
+                    accessTime: new Date()
+                });
+                return {
+                    status: 'success',
+                    access: 'DENIED',
+                    affiliateName: affiliate.fullName,
+                    message: 'ACCESO DENEGADO (Afiliado inactivo o suspendido)'
+                };
+            }
+            const today = new Date();
+            const activeMemberships = await db_1.db.select().from(schema_1.memberships)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.memberships.tenantId, clerkId), (0, drizzle_orm_1.eq)(schema_1.memberships.memberId, affiliate.id), (0, drizzle_orm_1.eq)(schema_1.memberships.status, 'ACTIVE'), (0, drizzle_orm_1.gte)(schema_1.memberships.endDate, today)));
+            const hasAccess = activeMemberships.length > 0;
+            const accessStatus = hasAccess ? 'ALLOWED' : 'DENIED';
+            await db_1.db.insert(schema_1.accesses).values({
+                tenantId: clerkId,
+                memberId: affiliate.id,
+                method: 'MANUAL',
+                status: accessStatus,
+                accessTime: new Date()
+            });
+            return {
+                status: 'success',
+                access: accessStatus,
+                affiliateName: affiliate.fullName,
+                message: hasAccess ? 'ACCESO PERMITIDO' : 'ACCESO DENEGADO (Membresía vencida o sin plan)'
+            };
+        }
+        catch (e) {
+            console.error("Error verify-access:", e);
+            return { status: 'error', message: 'Error interno en el servidor' };
+        }
+    }
+    async getRecentAccesses(clerkId) {
+        try {
+            if (!clerkId)
+                return [];
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
+            const recentAccesses = await db_1.db.query.accesses.findMany({
+                where: (0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.accesses.tenantId, clerkId), (0, drizzle_orm_1.gte)(schema_1.accesses.accessTime, startOfToday)),
+                orderBy: [(0, drizzle_orm_1.desc)(schema_1.accesses.accessTime)],
+                with: { affiliate: true }
+            });
+            return Array.isArray(recentAccesses) ? recentAccesses : [];
+        }
+        catch (e) {
+            console.error("Error get-recent-accesses:", e);
+            return [];
+        }
+    }
+    async getAllAccesses(clerkId, dateString) {
+        try {
+            if (!clerkId)
+                return [];
+            let conditions = [(0, drizzle_orm_1.eq)(schema_1.accesses.tenantId, clerkId)];
+            if (dateString) {
+                const [year, month, day] = dateString.split('-').map(Number);
+                const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+                const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+                conditions.push((0, drizzle_orm_1.gte)(schema_1.accesses.accessTime, startOfDay));
+                conditions.push((0, drizzle_orm_1.lte)(schema_1.accesses.accessTime, endOfDay));
+            }
+            const history = await db_1.db.query.accesses.findMany({
+                where: (0, drizzle_orm_1.and)(...conditions),
+                orderBy: [(0, drizzle_orm_1.desc)(schema_1.accesses.accessTime)],
+                limit: 100,
+                with: { affiliate: true }
+            });
+            return Array.isArray(history) ? history : [];
+        }
+        catch (e) {
+            console.error("Error get-all-accesses:", e);
+            return [];
+        }
+    }
+    async getGymDashboard(clerkId, orgId, fullName, orgName) {
+        try {
+            if (!clerkId)
+                return { status: 'error', message: 'Falta el clerkId' };
+            const tenantId = orgId || clerkId;
+            await this.ensureTenant(clerkId, fullName, orgId, orgName);
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+            const nextWeek = new Date(now);
+            nextWeek.setDate(now.getDate() + 7);
+            const activeAffs = await db_1.db.select().from(schema_1.affiliates)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.affiliates.tenantId, tenantId), (0, drizzle_orm_1.or)((0, drizzle_orm_1.eq)(schema_1.affiliates.status, 'ACTIVE'), (0, drizzle_orm_1.eq)(schema_1.affiliates.status, 'active'))));
+            const incomes = await db_1.db.select().from(schema_1.cashRegister)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.cashRegister.tenantId, tenantId), (0, drizzle_orm_1.eq)(schema_1.cashRegister.type, 'INCOME'), (0, drizzle_orm_1.gte)(schema_1.cashRegister.date, startOfMonth)));
+            const totalIncome = incomes.reduce((acc, curr) => acc + Number(curr.amount), 0);
+            const accessesToday = await db_1.db.select().from(schema_1.accesses)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.accesses.tenantId, tenantId), (0, drizzle_orm_1.gte)(schema_1.accesses.accessTime, startOfToday), (0, drizzle_orm_1.lte)(schema_1.accesses.accessTime, endOfToday)));
+            const expiring = await db_1.db.query.memberships.findMany({
+                where: (0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.memberships.tenantId, tenantId), (0, drizzle_orm_1.eq)(schema_1.memberships.status, 'ACTIVE'), (0, drizzle_orm_1.gte)(schema_1.memberships.endDate, startOfToday), (0, drizzle_orm_1.lte)(schema_1.memberships.endDate, nextWeek)),
+                with: {
+                    affiliate: true,
+                    plan: true
+                },
+                orderBy: [(0, drizzle_orm_1.asc)(schema_1.memberships.endDate)]
+            });
+            return {
+                status: 'success',
+                stats: {
+                    activeAffiliates: activeAffs.length,
+                    monthlyIncome: totalIncome,
+                    todayAccesses: accessesToday.length
+                },
+                expiringMemberships: Array.isArray(expiring) ? expiring : []
+            };
+        }
+        catch (e) {
+            console.error("❌ Error en Dashboard:", e);
+            return {
+                status: 'error',
+                stats: { activeAffiliates: 0, monthlyIncome: 0, todayAccesses: 0 },
+                expiringMemberships: []
+            };
+        }
+    }
+    async getModulesConfig(clerkId, orgId, fullName, orgName) {
+        try {
+            const tenantId = orgId || clerkId;
+            await this.ensureTenant(clerkId, fullName, orgId, orgName);
+            const config = await db_1.db.select().from(schema_1.gymConfigs)
+                .where((0, drizzle_orm_1.eq)(schema_1.gymConfigs.tenantId, tenantId))
+                .limit(1);
+            if (config.length === 0) {
+                return { status: 'error', message: 'No se encontró configuración' };
+            }
+            return {
+                status: 'success',
+                modulos: config[0].modulos,
+                plan: config[0].plan
+            };
+        }
+        catch (e) {
+            console.error("❌ Error cargando módulos:", e);
+            return { status: 'error', message: 'Error interno del servidor' };
+        }
+    }
+    async getTransactions(clerkId) {
+        try {
+            if (!clerkId)
+                return [];
+            const transactions = await db_1.db.select()
+                .from(schema_1.cashRegister)
+                .where((0, drizzle_orm_1.eq)(schema_1.cashRegister.tenantId, clerkId))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.cashRegister.date));
+            return transactions;
+        }
+        catch (e) {
+            console.error("Error get-transactions:", e);
+            return [];
+        }
+    }
+    async saveTransaction(body) {
+        try {
+            const { clerkId, type, category, amount, description } = body;
+            if (!clerkId || !type || !category || !amount) {
+                return { status: 'error', message: 'Faltan datos requeridos' };
+            }
+            await this.ensureTenant(clerkId);
+            await db_1.db.insert(schema_1.cashRegister).values({
+                tenantId: clerkId,
+                type,
+                category,
+                amount: String(amount),
+                description,
+                date: new Date()
+            });
+            return { status: 'success', message: 'Transacción registrada correctamente' };
+        }
+        catch (e) {
+            console.error("Error save-transaction:", e);
+            return { status: 'error', message: 'Error al registrar el movimiento en caja' };
+        }
+    }
+    async deleteTransaction(body) {
+        try {
+            const { id, clerkId } = body;
+            if (!id || !clerkId)
+                return { status: 'error', message: 'Faltan datos' };
+            await db_1.db.delete(schema_1.cashRegister).where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.cashRegister.id, id), (0, drizzle_orm_1.eq)(schema_1.cashRegister.tenantId, clerkId)));
+            return { status: 'success', message: 'Transacción eliminada' };
+        }
+        catch (error) {
+            console.error("Error delete-transaction:", error);
+            return { status: 'error', message: 'No se pudo eliminar el registro de caja.' };
         }
     }
 };
@@ -413,6 +940,140 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AppController.prototype, "getStats", null);
+__decorate([
+    (0, common_1.Get)('get-plans'),
+    __param(0, (0, common_1.Query)('clerkId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "getPlans", null);
+__decorate([
+    (0, common_1.Post)('save-plan'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "savePlan", null);
+__decorate([
+    (0, common_1.Post)('toggle-plan'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "togglePlan", null);
+__decorate([
+    (0, common_1.Post)('delete-plan'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "deletePlan", null);
+__decorate([
+    (0, common_1.Get)('get-affiliates'),
+    __param(0, (0, common_1.Query)('clerkId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "getAffiliates", null);
+__decorate([
+    (0, common_1.Post)('save-affiliate'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "saveAffiliate", null);
+__decorate([
+    (0, common_1.Post)('toggle-affiliate'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "toggleAffiliate", null);
+__decorate([
+    (0, common_1.Post)('delete-affiliate'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "deleteAffiliate", null);
+__decorate([
+    (0, common_1.Get)('get-affiliate-status'),
+    __param(0, (0, common_1.Query)('clerkId')),
+    __param(1, (0, common_1.Query)('memberId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "getAffiliateStatus", null);
+__decorate([
+    (0, common_1.Post)('save-membership'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "saveMembership", null);
+__decorate([
+    (0, common_1.Post)('verify-access'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "verifyAccess", null);
+__decorate([
+    (0, common_1.Get)('get-recent-accesses'),
+    __param(0, (0, common_1.Query)('clerkId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "getRecentAccesses", null);
+__decorate([
+    (0, common_1.Get)('get-all-accesses'),
+    __param(0, (0, common_1.Query)('clerkId')),
+    __param(1, (0, common_1.Query)('date')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "getAllAccesses", null);
+__decorate([
+    (0, common_1.Get)('get-gym-dashboard'),
+    __param(0, (0, common_1.Query)('clerkId')),
+    __param(1, (0, common_1.Query)('orgId')),
+    __param(2, (0, common_1.Query)('fullName')),
+    __param(3, (0, common_1.Query)('orgName')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String, String]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "getGymDashboard", null);
+__decorate([
+    (0, common_1.Get)('get-modules-config'),
+    __param(0, (0, common_1.Query)('clerkId')),
+    __param(1, (0, common_1.Query)('orgId')),
+    __param(2, (0, common_1.Query)('fullName')),
+    __param(3, (0, common_1.Query)('orgName')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String, String]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "getModulesConfig", null);
+__decorate([
+    (0, common_1.Get)('get-transactions'),
+    __param(0, (0, common_1.Query)('clerkId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "getTransactions", null);
+__decorate([
+    (0, common_1.Post)('save-transaction'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "saveTransaction", null);
+__decorate([
+    (0, common_1.Post)('delete-transaction'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AppController.prototype, "deleteTransaction", null);
 exports.AppController = AppController = __decorate([
     (0, common_1.Controller)()
 ], AppController);

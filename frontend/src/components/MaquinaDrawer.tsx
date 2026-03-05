@@ -1,7 +1,14 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { X, Save, Loader2, Monitor, MapPin, QrCode, Hash, Tag, Box } from "lucide-react";
+import { X, Save, Loader2, Monitor, MapPin, QrCode, Hash } from "lucide-react";
+import { API_URL } from "@/config";
+
+interface Cliente {
+  id: string;
+  name: string;
+}
 
 interface Maquina {
   id?: string;
@@ -9,52 +16,92 @@ interface Maquina {
   name: string;
   brand: string;
   model: string;
-  serial: string; // 👈 Cambiado a 'serial'
-  location: string; // 👈 Nuevo
-  qrCode: string; // 👈 Nuevo
+  serial: string;
+  location: string;
+  qrCode: string;
 }
 
-export default function MaquinaDrawer({ isOpen, onClose, onSuccess, maquinaEditar }: any) {
+interface MaquinaDrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  maquinaEditar: Maquina | null;
+}
+
+const emptyForm: Maquina = {
+  clientId: "",
+  name: "",
+  brand: "",
+  model: "",
+  serial: "",
+  location: "",
+  qrCode: "",
+};
+
+export default function MaquinaDrawer({ isOpen, onClose, onSuccess, maquinaEditar }: MaquinaDrawerProps) {
   const { getToken, userId } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [clientes, setClientes] = useState([]);
-  const [formData, setFormData] = useState<Maquina>({
-    clientId: "", name: "", brand: "", model: "", serial: "", location: "", qrCode: ""
-  });
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [formData, setFormData] = useState<Maquina>(emptyForm);
 
   useEffect(() => {
     const loadClientes = async () => {
-      const token = await getToken();
-      const res = await fetch(`http://localhost:3000/get-clients?clerkId=${userId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setClientes(await res.json());
+      if (!userId || !isOpen) return;
+      try {
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/get-clients?clerkId=${userId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        setClientes(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("Error cargando clientes:", error);
+        setClientes([]);
+      }
     };
-    if (isOpen) loadClientes();
+
+    loadClientes();
+
     if (maquinaEditar) {
       setFormData({
-        ...maquinaEditar,
+        id: maquinaEditar.id,
+        clientId: maquinaEditar.clientId || "",
+        name: maquinaEditar.name || "",
+        brand: maquinaEditar.brand || "",
+        model: maquinaEditar.model || "",
         serial: maquinaEditar.serial || "",
         location: maquinaEditar.location || "",
         qrCode: maquinaEditar.qrCode || ""
       });
     } else {
-      setFormData({ clientId: "", name: "", brand: "", model: "", serial: "", location: "", qrCode: "" });
+      setFormData(emptyForm);
     }
-  }, [isOpen, maquinaEditar]);
+  }, [isOpen, maquinaEditar, getToken, userId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!userId) return;
+
     setLoading(true);
     try {
       const token = await getToken();
-      await fetch("http://localhost:3000/save-machine", {
+      const res = await fetch(`${API_URL}/save-machine`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...formData, clerkId: userId }),
       });
+
+      const result = await res.json();
+      if (result.status !== "success") {
+        alert(result.message || "No se pudo guardar el equipo");
+        return;
+      }
+
       onSuccess();
       onClose();
+    } catch (error) {
+      console.error("Error al guardar:", error);
+      alert("Error de conexión con el servidor");
     } finally {
       setLoading(false);
     }
@@ -62,73 +109,141 @@ export default function MaquinaDrawer({ isOpen, onClose, onSuccess, maquinaEdita
 
   return (
     <>
-      {isOpen && <div className="fixed inset-0 bg-black/40 z-[100] backdrop-blur-sm" onClick={onClose} />}
-      <aside className={`fixed inset-y-0 right-0 z-[110] w-full max-w-md bg-white shadow-2xl transform transition-transform duration-300 ${isOpen ? "translate-x-0" : "translate-x-full"}`}>
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/40 z-[100] backdrop-blur-sm transition-opacity" 
+          onClick={onClose} 
+        />
+      )}
+
+      <aside className={`
+        fixed inset-y-0 right-0 z-[110] w-full max-w-md bg-white shadow-2xl 
+        transform transition-transform duration-300 ease-in-out
+        ${isOpen ? "translate-x-0" : "translate-x-full"}
+      `}>
         <form onSubmit={handleSubmit} className="h-full flex flex-col">
+          
           <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
-            <h2 className="text-xl font-black">{maquinaEditar ? 'EDITAR EQUIPO' : 'NUEVO EQUIPO'}</h2>
-            <button type="button" onClick={onClose}><X /></button>
+            <h2 className="text-xl font-black text-slate-900 tracking-tight">
+              {maquinaEditar ? "EDITAR EQUIPO" : "NUEVO EQUIPO"}
+            </h2>
+            <button 
+              type="button" 
+              onClick={onClose}
+              className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-800"
+            >
+              <X size={20} />
+            </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            
+            {/* 🛡️ Cambio: text-slate-800 para etiquetas y text-black para los inputs */}
             <div>
-              <label className="text-xs font-bold text-slate-400 uppercase">Gimnasio / Cliente</label>
-              <select required className="w-full p-3 border rounded-xl mt-1" value={formData.clientId} onChange={(e) => setFormData({...formData, clientId: e.target.value})}>
-                <option value="">Selecciona un gimnasio...</option>
-                {clientes.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Gimnasio / Cliente</label>
+              <select 
+                required 
+                className="w-full p-3 border border-slate-300 rounded-xl mt-1 focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-black bg-white"
+                value={formData.clientId} 
+                onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
+              >
+                <option value="" className="text-slate-500">Selecciona un gimnasio...</option>
+                {clientes.map((c) => (
+                  <option key={c.id} value={c.id} className="text-black">{c.name}</option>
+                ))}
               </select>
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-400 uppercase">Nombre del Equipo</label>
-              <div className="relative">
-                <Monitor className="absolute left-3 top-3 text-slate-300" size={18} />
-                <input required className="w-full p-3 pl-10 border rounded-xl" placeholder="Ej: Caminadora T90" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+              <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Nombre del Equipo</label>
+              <div className="relative mt-1">
+                <Monitor className="absolute left-3 top-3.5 text-slate-500" size={18} />
+                <input 
+                  required 
+                  className="w-full p-3 pl-10 border border-slate-300 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-black" 
+                  placeholder="Ej: Caminadora T90" 
+                  value={formData.name} 
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase">Marca</label>
-                <input className="w-full p-3 border rounded-xl" placeholder="LifeFitness" value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} />
+                <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Marca</label>
+                <input 
+                  className="w-full p-3 border border-slate-300 rounded-xl mt-1 focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none font-bold text-black" 
+                  placeholder="LifeFitness" 
+                  value={formData.brand} 
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })} 
+                />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase">Modelo</label>
-                <input className="w-full p-3 border rounded-xl" placeholder="2024-X" value={formData.model} onChange={(e) => setFormData({...formData, model: e.target.value})} />
+                <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Modelo</label>
+                <input 
+                  className="w-full p-3 border border-slate-300 rounded-xl mt-1 focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none font-bold text-black" 
+                  placeholder="2024-X" 
+                  value={formData.model} 
+                  onChange={(e) => setFormData({ ...formData, model: e.target.value })} 
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase">Serial</label>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-3 text-slate-300" size={18} />
-                  <input className="w-full p-3 pl-10 border rounded-xl font-mono" placeholder="SN-123" value={formData.serial} onChange={(e) => setFormData({...formData, serial: e.target.value})} />
+                <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Serial</label>
+                <div className="relative mt-1">
+                  <Hash className="absolute left-3 top-3.5 text-slate-500" size={18} />
+                  <input 
+                    className="w-full p-3 pl-10 border border-slate-300 rounded-xl font-mono text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none font-bold text-black" 
+                    placeholder="SN-123" 
+                    value={formData.serial} 
+                    onChange={(e) => setFormData({ ...formData, serial: e.target.value })} 
+                  />
                 </div>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase">Cód. QR (Opcional)</label>
-                <div className="relative">
-                  <QrCode className="absolute left-3 top-3 text-slate-300" size={18} />
-                  <input className="w-full p-3 pl-10 border rounded-xl font-mono" placeholder="QR-456" value={formData.qrCode} onChange={(e) => setFormData({...formData, qrCode: e.target.value})} />
+                <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Cód. QR</label>
+                <div className="relative mt-1">
+                  <QrCode className="absolute left-3 top-3.5 text-slate-500" size={18} />
+                  <input 
+                    className="w-full p-3 pl-10 border border-slate-300 rounded-xl font-mono text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none font-bold text-black" 
+                    placeholder="QR-456" 
+                    value={formData.qrCode} 
+                    onChange={(e) => setFormData({ ...formData, qrCode: e.target.value })} 
+                  />
                 </div>
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-400 uppercase">Ubicación dentro del Gym</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 text-slate-300" size={18} />
-                <input className="w-full p-3 pl-10 border rounded-xl" placeholder="Ej: Zona de Cardio, 2do Piso" value={formData.location} onChange={(e) => setFormData({...formData, location: e.target.value})} />
+              <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Ubicación física</label>
+              <div className="relative mt-1">
+                <MapPin className="absolute left-3 top-3.5 text-slate-500" size={18} />
+                <input 
+                  className="w-full p-3 pl-10 border border-slate-300 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-black" 
+                  placeholder="Ej: Zona de Cardio, 2do Piso" 
+                  value={formData.location} 
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })} 
+                />
               </div>
             </div>
           </div>
 
           <div className="p-6 border-t bg-slate-50 flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 py-4 font-bold">Cancelar</button>
-            <button disabled={loading} className="flex-[2] bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2">
-              {loading ? <Loader2 className="animate-spin" /> : <Save size={20} />}
-              Guardar Equipo
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="flex-1 py-4 font-bold text-slate-700 hover:bg-slate-200 rounded-2xl transition-all border border-slate-300"
+            >
+              Cancelar
+            </button>
+            <button 
+              disabled={loading} 
+              className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:bg-blue-300 transition-all flex items-center justify-center gap-2"
+            >
+              {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+              GUARDAR EQUIPO
             </button>
           </div>
         </form>

@@ -2,12 +2,13 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { X, Save, Loader2, Building2, MapPin, Phone, Mail, Hash } from "lucide-react";
+import { API_URL } from "@/config"; // 👈 Añadido para mantener conectividad centralizada
 
 // Definimos la estructura del objeto Cliente incluyendo el NIT
 interface Cliente {
   id?: string;
   name: string;
-  nit: string; // 👈 Campo NIT añadido
+  nit: string; 
   address: string;
   phone: string;
   email: string;
@@ -27,7 +28,7 @@ export default function ClienteDrawer({ isOpen, onClose, onSuccess, clienteEdita
   // Inicializamos el estado con el campo NIT vacío
   const [formData, setFormData] = useState<Cliente>({
     name: "",
-    nit: "", // 👈 Inicializado
+    nit: "", 
     address: "",
     phone: "",
     email: "",
@@ -54,7 +55,7 @@ export default function ClienteDrawer({ isOpen, onClose, onSuccess, clienteEdita
     setLoading(true);
     try {
       const token = await getToken();
-      const res = await fetch("http://localhost:3000/save-client", {
+      const res = await fetch(`${API_URL}/save-client`, { // 👈 Usamos la API central
         method: "POST",
         headers: { 
           "Content-Type": "application/json", 
@@ -87,31 +88,33 @@ export default function ClienteDrawer({ isOpen, onClose, onSuccess, clienteEdita
         ${isOpen ? "translate-x-0" : "translate-x-full"}
       `}>
         <div className="h-full flex flex-col">
+          
           {/* Cabecera */}
           <div className="p-6 border-b flex justify-between items-center bg-slate-50">
             <div>
-              <h2 className="text-xl font-black text-slate-800 tracking-tight">
+              <h2 className="text-xl font-black text-slate-900 tracking-tight"> {/* 👈 Más oscuro */}
                 {clienteEditar ? "EDITAR CLIENTE" : "NUEVO CLIENTE"}
               </h2>
               <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">
                 Información del Gimnasio
               </p>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
-              <X size={24} />
+            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-800">
+              <X size={20} />
             </button>
           </div>
 
           {/* Formulario de entrada */}
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+            
             {/* Nombre del Cliente */}
             <div>
-              <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-tighter">Nombre Comercial / Gym</label>
-              <div className="relative">
-                <Building2 className="absolute left-3 top-3 text-slate-300" size={20} />
+              <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Nombre Cliente / Gym</label> {/* 👈 Letras negras */}
+              <div className="relative mt-1">
+                <Building2 className="absolute left-3 top-3.5 text-slate-500" size={18} />
                 <input
                   required
-                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium"
+                  className="w-full p-3 pl-10 border border-slate-300 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-black" 
                   placeholder="Ej: Power Fitness Center"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -121,11 +124,11 @@ export default function ClienteDrawer({ isOpen, onClose, onSuccess, clienteEdita
 
             {/* Campo NIT (Nuevo) */}
             <div>
-              <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-tighter">NIT / Identificación Fiscal</label>
-              <div className="relative">
-                <Hash className="absolute left-3 top-3 text-slate-300" size={20} />
+              <label className="text-xs font-black text-slate-800 uppercase tracking-widest">NIT / Identificación Fiscal</label>
+              <div className="relative mt-1">
+                <Hash className="absolute left-3 top-3.5 text-slate-500" size={18} />
                 <input
-                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium"
+                  className="w-full p-3 pl-10 border border-slate-300 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-black"
                   placeholder="Ej: 900.123.456-1"
                   value={formData.nit}
                   onChange={(e) => setFormData({ ...formData, nit: e.target.value })}
@@ -135,11 +138,11 @@ export default function ClienteDrawer({ isOpen, onClose, onSuccess, clienteEdita
 
             {/* Dirección */}
             <div>
-              <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-tighter">Dirección Física</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 text-slate-300" size={20} />
+              <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Dirección Física</label>
+              <div className="relative mt-1">
+                <MapPin className="absolute left-3 top-3.5 text-slate-500" size={18} />
                 <input
-                  className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium"
+                  className="w-full p-3 pl-10 border border-slate-300 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-black"
                   placeholder="Calle 123 #45-67..."
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -150,11 +153,11 @@ export default function ClienteDrawer({ isOpen, onClose, onSuccess, clienteEdita
             {/* Teléfono y Correo en fila */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-tighter">Teléfono</label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-3 text-slate-300" size={18} />
+                <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Teléfono</label>
+                <div className="relative mt-1">
+                  <Phone className="absolute left-3 top-3.5 text-slate-500" size={18} />
                   <input
-                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium"
+                    className="w-full p-3 pl-10 border border-slate-300 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-black"
                     placeholder="300 123..."
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -162,12 +165,12 @@ export default function ClienteDrawer({ isOpen, onClose, onSuccess, clienteEdita
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-tighter">Correo (Opcional)</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-3 text-slate-300" size={18} />
+                <label className="text-xs font-black text-slate-800 uppercase tracking-widest">Correo</label>
+                <div className="relative mt-1">
+                  <Mail className="absolute left-3 top-3.5 text-slate-500" size={18} />
                   <input
                     type="email"
-                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium"
+                    className="w-full p-3 pl-10 border border-slate-300 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-bold text-black"
                     placeholder="gym@mail.com"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -182,17 +185,17 @@ export default function ClienteDrawer({ isOpen, onClose, onSuccess, clienteEdita
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-4 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all"
+              className="flex-1 py-4 font-bold text-slate-700 hover:bg-slate-200 rounded-2xl transition-all border border-slate-300"
             >
               Cancelar
             </button>
             <button
               onClick={handleSubmit}
               disabled={loading || !formData.name}
-              className="flex-[2] bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-200 flex items-center justify-center gap-2 hover:bg-blue-700 disabled:opacity-50 transition-all active:scale-95"
+              className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-200 flex items-center justify-center gap-2 hover:bg-blue-700 disabled:opacity-50 transition-all active:scale-95"
             >
               {loading ? <Loader2 className="animate-spin" /> : <Save size={20} />}
-              {clienteEditar ? "Guardar Cambios" : "Crear Cliente"}
+              {clienteEditar ? "GUARDAR" : "CREAR CLIENTE"}
             </button>
           </div>
         </div>

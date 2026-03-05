@@ -1,7 +1,10 @@
 version: '3.8'
+
 services:
-  db:
-    image: postgres:16
+  # --- BASE DE DATOS
+  db-gym:
+    image: postgres:16-alpine
+    container_name: gym-db
     restart: always
     environment:
       POSTGRES_USER: admin
@@ -9,3 +12,23 @@ services:
       POSTGRES_DB: solucion_gym_db
     ports:
       - "5432:5432"
+    volumes:
+      - pgdata_gym:/var/lib/postgresql/data 
+
+  # --- BACKEND
+  api-gym:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gym-backend
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db-gym 
+    environment:
+      DATABASE_URL: postgresql://admin:Soluciong1m@db-gym:5432/solucion_gym_db
+      PORT: 3000
+
+volumes:
+  pgdata_gym: # Definimos el volumen aquí

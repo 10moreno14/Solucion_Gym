@@ -10,6 +10,7 @@ import {
   Calendar,
   Monitor
 } from "lucide-react";
+import { API_URL } from "@/config"; // 👈 API centralizada
 
 export default async function DashboardPage() {
   const { userId, getToken } = await auth();
@@ -27,15 +28,15 @@ export default async function DashboardPage() {
   let latestReports = [];
   
   try {
-    // Sincronizar usuario (Asegúrate de que tu backend use la IP correcta si pruebas en móvil)
-    await fetch("http://localhost:3000/sync-user", {
+    // Sincronizar usuario 
+    await fetch(`${API_URL}/sync-user`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ clerkId: userId, email, fullName: nombreCompleto }),
     });
 
     // Pedir estadísticas al backend
-    const resStats = await fetch(`http://localhost:3000/get-stats?clerkId=${userId}`, {
+    const resStats = await fetch(`${API_URL}/get-stats?clerkId=${userId}`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store"
     });
@@ -63,25 +64,28 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* 📊 SECCIÓN DE MÉTRICAS */}
+      {/* 📊 SECCIÓN DE MÉTRICAS (AHORA SON ENLACES CLICABLES) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard 
           title="Total Reportes" 
           value={stats.reports} 
           icon={<FileText className="text-blue-600" />} 
           bgColor="bg-blue-50" 
+          href="/dashboard/mantenimiento" // 👈 Redirige a mantenimiento
         />
         <StatCard 
           title="Clientes" 
           value={stats.clients} 
           icon={<Users className="text-emerald-600" />} 
-          bgColor="bg-emerald-50" 
+          bgColor="bg-emerald-50"
+          href="/dashboard/clientes" // 👈 Redirige a clientes
         />
         <StatCard 
           title="Equipos" 
           value={stats.machines} 
           icon={<Monitor className="text-amber-600" />} 
           bgColor="bg-amber-50" 
+          href="/dashboard/equipos" // 👈 Redirige a equipos
         />
       </div>
 
@@ -93,7 +97,8 @@ export default async function DashboardPage() {
             Accesos Rápidos
           </h3>
           
-          <Link href="/dashboard/mantenimiento" className="group block p-6 bg-slate-900 rounded-3xl shadow-xl hover:bg-blue-700 transition-all duration-300">
+          {/* BOTÓN NUEVO REPORTE */}
+          <Link href="/dashboard/mantenimiento?nuevo=true" className="group block p-6 bg-slate-900 rounded-3xl shadow-xl hover:bg-blue-700 transition-all duration-300">
             <div className="flex justify-between items-start mb-4">
               <div className="bg-white/10 p-3 rounded-2xl text-white group-hover:bg-white/20 transition-colors">
                 <Plus size={24} />
@@ -137,13 +142,18 @@ export default async function DashboardPage() {
             ) : (
               <div className="divide-y divide-slate-100">
                 {latestReports.map((report: any) => (
-                  <div key={report.id} className="p-5 flex items-center gap-4 hover:bg-slate-50 transition-colors group">
-                    <div className="bg-blue-50 p-3 rounded-xl text-blue-600 shadow-inner">
+                  // 🛡️ Cambio: Añadimos ?reporteId= a la URL para que la página de mantenimiento sepa cuál abrir
+                  <Link 
+                    href={`/dashboard/mantenimiento?reporteId=${report.id}`} 
+                    key={report.id} 
+                    className="block p-5 flex items-center gap-4 hover:bg-slate-50 transition-colors group cursor-pointer"
+                  >
+                    <div className="bg-blue-50 p-3 rounded-xl text-blue-600 shadow-inner group-hover:bg-blue-600 group-hover:text-white transition-colors">
                       <ClipboardCheck size={20} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-slate-800 truncate group-hover:text-blue-600 transition-colors">
-                        {report.client?.name}
+                        {report.client?.name || "Cliente Desconocido"}
                       </p>
                       <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1 font-bold uppercase tracking-wider">
                         <Calendar size={12} className="text-blue-400" /> 
@@ -152,8 +162,8 @@ export default async function DashboardPage() {
                         <span>Folio #{report.reportNumber}</span>
                       </div>
                     </div>
-                    <ArrowRight size={18} className="text-slate-200 group-hover:text-blue-500 transition-all" />
-                  </div>
+                    <ArrowRight size={18} className="text-slate-200 group-hover:text-blue-500 transition-all group-hover:translate-x-1" />
+                  </Link>
                 ))}
               </div>
             )}
@@ -164,10 +174,10 @@ export default async function DashboardPage() {
   );
 }
 
-// Sub-componente para las tarjetas (dentro del mismo archivo)
-function StatCard({ title, value, icon, bgColor }: { title: string, value: number, icon: React.ReactNode, bgColor: string }) {
+// Sub-componente actualizado: Ahora acepta "href" y es un componente <Link>
+function StatCard({ title, value, icon, bgColor, href }: { title: string, value: number, icon: React.ReactNode, bgColor: string, href: string }) {
   return (
-    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-6 transition-all hover:shadow-md hover:-translate-y-1 group">
+    <Link href={href} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-6 transition-all hover:shadow-md hover:-translate-y-1 group cursor-pointer block">
       <div className={`${bgColor} p-4 rounded-2xl shadow-inner group-hover:scale-110 transition-transform`}>
         {icon}
       </div>
@@ -175,6 +185,6 @@ function StatCard({ title, value, icon, bgColor }: { title: string, value: numbe
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-1">{title}</p>
         <p className="text-3xl font-black text-slate-800 tracking-tighter">{value}</p>
       </div>
-    </div>
+    </Link>
   );
 }
